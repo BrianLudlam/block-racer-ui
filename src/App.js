@@ -33,15 +33,15 @@ class App extends Component {
   }
 
   render() {
-    const { loadingRace, uiSelectedRace, recentRaces } = this.props;
+    const { loadingWeb3, web3Error, loadingRace, uiSelectedRace, recentRaces } = this.props;
     return (
       <Layout>
         <DappNavbar />
         <Layout>
           <Content>
-            <RacerCreateFormModal />
-            <RightDrawerView />
-
+            {!loadingWeb3 && !web3Error && <RacerCreateFormModal />}
+            {!loadingWeb3 && !web3Error && <RightDrawerView />}
+            {!loadingWeb3 && !web3Error && (
             <Row style={{ marginTop: "4px" }}>
               <Col xs={15} sm={15} md={15} lg={12} xl={12} xxl={12}>
                 <RecentRacesSelector/>
@@ -49,10 +49,16 @@ class App extends Component {
               <Col xs={9} sm={9} md={9} lg={6} xl={6} xxl={6}>
                 <SpawnButton />
               </Col>
-            </Row>
+            </Row>)}
 
             <Row style={{ margin: "4px", padding:"0px 8px" }}>
-              {(!uiSelectedRace && !recentRaces) ? (
+              {(loadingWeb3) ? (
+                <span><Spin /><span style={{marginLeft: "4px"}}>
+                  Loading Web3 Provider...
+                </span></span>
+              ) : (!!web3Error) ? (
+                <span>Install and activate MetaMask, or any Web3 Provider, to continue.</span>
+              ) : (!uiSelectedRace && !recentRaces) ? (
                 <span>Loading races...</span>
               ) : (!uiSelectedRace && !recentRaces.length) ? (
                 <span>No recent races found.</span>
@@ -79,12 +85,16 @@ class App extends Component {
 }
 
 App.propTypes = {
+  loadingWeb3: PropTypes.bool,
+  web3Error: PropTypes.string,
   loadingRace: PropTypes.bool,
   uiSelectedRace: PropTypes.string,
   recentRaces: PropTypes.array
 }
 
 export default connect((state) => ({
+  loadingWeb3: state.loadingWeb3,
+  web3Error: state.web3Error,
   loadingRace: state.loadingRace,
   uiSelectedRace: state.uiSelectedRace,
   recentRaces: state.recentRaces,

@@ -20,11 +20,14 @@ class DappNavbar extends PureComponent {
               <span style={{fontSize: "20px", color: "white"}}>
                 Block Racer
               </span>
-              {(!!web3Error) ? web3Error : 
-              <BlockClock 
-                networkSyncing={networkSyncing} 
-                networkName={(loadingWeb3) ? null : networkName}
-                blockNumber={(loadingWeb3) ? null : blockNumber}/>}
+              {(!!web3Error) ? 
+                <span style={{fontSize: "20px", paddingLeft: "4px", color: "red"}}>
+                  {web3Error}
+                </span> : 
+                <BlockClock 
+                  networkSyncing={networkSyncing} 
+                  networkName={(loadingWeb3) ? null : networkName}
+                  blockNumber={(loadingWeb3) ? null : blockNumber}/>}
             </Row>
             <Row style={{lineHeight: "14px",whiteSpace: 'nowrap'}}>
               <span style={{fontSize: "14px", color: "#ccc", paddingRight: "4px"}}>

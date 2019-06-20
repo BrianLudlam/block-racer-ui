@@ -12,7 +12,7 @@ import { web3Loaded, web3Error, accountChange, accountChanged,
 
 function* mountNetwork() {
   const { web3 } = yield select();
-  const change = {
+  const init = {
     web3,
     network: '',
     block: undefined,
@@ -25,49 +25,49 @@ function* mountNetwork() {
     spawnCount: 0,
     settleCount: 0
   };
-  if(!change.web3){
-    change.web3 = yield* mountWeb3();
+  if(!init.web3){
+    init.web3 = yield* mountWeb3();
   }
-  if(!change.web3){
-    yield put(web3Loaded(change));
+  if(!init.web3){
+    //yield put(web3Loaded(init));
     return;
   }
-  change.entityC = new change.web3.eth.Contract(Entity.abi, EntityAddress);
-  change.blockRacerC = new change.web3.eth.Contract(BlockRacer.abi, BlockRacerAddress);
+  init.entityC = new init.web3.eth.Contract(Entity.abi, EntityAddress);
+  init.blockRacerC = new init.web3.eth.Contract(BlockRacer.abi, BlockRacerAddress);
   const getNetwork = async (web3) => await web3.eth.net.getNetworkType();
-  change.network = yield call(getNetwork, change.web3);
-  change.block = yield call(change.web3.eth.getBlock, 'latest');
+  init.network = yield call(getNetwork, init.web3);
+  init.block = yield call(init.web3.eth.getBlock, 'latest');
 
-  const accounts = yield call(change.web3.eth.getAccounts);
+  const accounts = yield call(init.web3.eth.getAccounts);
   if (!!accounts && !!accounts[0]){
-    change.account = accounts[0].toString();
-    change.accountView = change.account.substr(0,7)+'...'+ change.account.substr(
-      change.account.length-5, change.account.length);
-    const balanceWei = yield call(change.web3.eth.getBalance, change.account);
-    change.balance = change.web3.utils.fromWei(balanceWei, 'ether');
-    if (!!change.blockRacerC){
-      const experienceOf = yield call(change.blockRacerC.methods.experienceOf, change.account);
-      const exp = yield call(experienceOf.call, {from: change.account});
-      change.exp = (!exp) ? 0 : parseInt(exp,10);
+    init.account = accounts[0].toString();
+    init.accountView = init.account.substr(0,7)+'...'+ init.account.substr(
+      init.account.length-5, init.account.length);
+    const balanceWei = yield call(init.web3.eth.getBalance, init.account);
+    init.balance = init.web3.utils.fromWei(balanceWei, 'ether');
+    if (!!init.blockRacerC){
+      const experienceOf = yield call(init.blockRacerC.methods.experienceOf, init.account);
+      const exp = yield call(experienceOf.call, {from: init.account});
+      init.exp = (!exp) ? 0 : parseInt(exp,10);
     }
-    const spawnCountMethod = yield call(change.entityC.methods.spawnCount);
-    change.spawnCount = yield call(spawnCountMethod.call, {from: change.account});
-    change.spawnCount = (!change.spawnCount) ? 0 : parseInt(change.spawnCount,10);
-    //const settleCountMethod = yield call(change.blockRacerC.methods.numSettling);
-    //change.settleCount = yield call(settleCountMethod.call, {from: change.account});
-    //change.settleCount = (!change.settleCount) ? 0 : parseInt(change.settleCount,10);
+    const spawnCountMethod = yield call(init.entityC.methods.spawnCount);
+    init.spawnCount = yield call(spawnCountMethod.call, {from: init.account});
+    init.spawnCount = (!init.spawnCount) ? 0 : parseInt(init.spawnCount,10);
+    //const settleCountMethod = yield call(init.blockRacerC.methods.numSettling);
+    //init.settleCount = yield call(settleCountMethod.call, {from: init.account});
+    //init.settleCount = (!init.settleCount) ? 0 : parseInt(init.settleCount,10);
   }
-  yield fork(initRecentRaces, change.blockRacerC, change.block.number, 15000);
+  yield fork(initRecentRaces, init.blockRacerC, init.block.number, 15000);
 
-  yield put(web3Loaded(change));
+  yield put(web3Loaded(init));
   yield fork(watchForAccountChanges);
-  yield fork(watchForBlockUpdates, change.web3);
+  yield fork(watchForBlockUpdates, init.web3);
 }
 
 function* mountWeb3() {
   let web3;
   const Web3 = require('web3');
-  if (window.ethereum) {
+  if (typeof window.ethereum !== 'undefined') {
     try {// Requesting account access
       yield call(window.ethereum.enable);
       web3 = new Web3(window.ethereum, null, {
@@ -76,15 +76,15 @@ function* mountWeb3() {
       });
       return web3;
     } catch (e) {// User denied account access
-      yield put(web3Error({error: 'Web3 User denied account access: '+e}));
+      yield put(web3Error({error: 'Web3 User denied account access.'}));
     }
-  } else if (window.web3) {// Legacy dapp browsers...
+  } else if (typeof window.web3 !== 'undefined') {// Legacy dapp browsers...
     web3 = new Web3(window.web3.currentProvider, null, {
       transactionConfirmationBlocks: 12,
       transactionBlockTimeout: 36
     });
   } else {
-    yield put(web3Error({error: 'Metamask/Web3 Provider not found'}));
+    yield put(web3Error({error: 'Metamask/Web3 Provider not found.'}));
   }
   return web3;  
 }
