@@ -122,7 +122,7 @@ class RaceTrack extends PureComponent {
     const _speed = laneValues['L'+lane]['$'+(startBlock+leg)][split];
     const _distance = _speed + ((!snapshot.length) ? 0 : snapshot[lane].distance);
     const _percent = (_distance >= raceDistance) ?
-      100 : ((_distance / raceDistance)*100).toFixed(2);
+      100 : ((_distance / raceDistance)*100).toFixed(4);
   
     this.laneMotion[lane] = anime({
       targets: ('.L'+lane),
@@ -209,6 +209,8 @@ class RaceTrack extends PureComponent {
 
     const orderedSnapshot = (!snapshot.length) ? [] :
       [...snapshot].sort(placeSort);
+
+      console.log('orderedSnapshot: ', orderedSnapshot)
 
     return (
     <div>
