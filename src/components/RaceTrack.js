@@ -302,7 +302,7 @@ class RaceTrack extends PureComponent {
           <Statistic title="Race Block" value={((!snapshot[0]) ? 0 : startBlock + snapshot[0].leg)} />
         </Col>
         <Col xs={8} sm={8} md={8} lg={6} xl={4} xxl={3}>
-          <Statistic title="Race Split" value={((!snapshot[0]) ? 0 : snapshot[0].split)} />
+          <Statistic title="Race Block Split" value={((!snapshot[0]) ? 0 : snapshot[0].split + 1)} suffix=" of 32" />
         </Col>
       </Row>)}
 
