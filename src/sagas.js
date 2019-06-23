@@ -1,11 +1,12 @@
 import { call, fork, put, select, take, takeLatest, takeEvery/*, cancel, cancelled*/ } from 'redux-saga/effects';
 //import { eventChannel, buffers, END } from 'redux-saga';
+import { cacheBlockhash, getBlockhashSet, blockhashCacheThreshold } from "./firebase";
 import { LOAD_WEB3, LOAD_WEB3_SUCCESS, NETWORK_CHANGE, ACCOUNT_CHANGE, ACCOUNT_CHANGED, SEND_TX,
          Entity, EntityAddress, BlockRacer, BlockRacerAddress, racerLevel, mapEventToState, 
          createBlockUpdateChannel, createAccountChangeChannel, UI_RACE_SELECTED,//createEventListenerChannel,
          createTransactionChannel, mapRacerSpawnState, loadAccountState,
          saveAccountState, initAccountState, processLaneValues, conditionsView,
-         getPastEvents, accountTopic, saveBlockhash, loadBlockhash, BLOCK_UPDATE } from './constants';
+         getPastEvents, accountTopic, BLOCK_UPDATE } from './constants';
 import { web3Loaded, web3Error, accountChange, accountChanged,
          blockUpdate, accountMounted, racerUpdated, contractEvent, txUpdate, raceLoaded,
          raceUpdated, recentRacesUpdated } from './actions';
@@ -27,10 +28,7 @@ function* mountNetwork() {
   };
   if(!init.web3){
     init.web3 = yield* mountWeb3();
-  }
-  if(!init.web3){
-    //yield put(web3Loaded(init));
-    return;
+    if(!init.web3) return;
   }
   init.entityC = new init.web3.eth.Contract(Entity.abi, EntityAddress);
   init.blockRacerC = new init.web3.eth.Contract(BlockRacer.abi, BlockRacerAddress);
@@ -57,7 +55,7 @@ function* mountNetwork() {
     //init.settleCount = yield call(settleCountMethod.call, {from: init.account});
     //init.settleCount = (!init.settleCount) ? 0 : parseInt(init.settleCount,10);
   }
-  yield fork(initRecentRaces, init.blockRacerC, init.block.number, 15000);
+  yield fork(initRecentRaces, init.blockRacerC, init.block.number, 35000);
 
   yield put(web3Loaded(init));
   yield fork(watchForAccountChanges);
@@ -107,7 +105,6 @@ function* watchForBlockUpdates(web3) {
           const { balance, exp } = yield* updateAccount(account);
           const { spawnCount, settleCount } = yield* updateCounts();
           yield put(blockUpdate({block, balance, exp, spawnCount, settleCount}));
-          //yield fork(saveBlockhash, block.number, block.hash);
         }
       }
     }
@@ -414,7 +411,7 @@ function* watchTransaction({contract, method, args, params}) {
 
 
 function* mountRace() {
-  const { web3, account, block, blockRacerC, uiSelectedRace } = yield select();
+  const { web3, network, account, block, blockRacerC, uiSelectedRace } = yield select();
 
   const raceTrack = { 
     raceNumber: uiSelectedRace,
@@ -466,23 +463,23 @@ function* mountRace() {
 
   raceTrack.dataExpired = false;
   if (raceTrack.raceStarted) {
+    const _hashHistory = yield call(getBlockhashSet, network, raceTrack.startBlock);
+
     let nextBlock = raceTrack.startBlock;
     let blockhash;
     while (nextBlock <= raceTrack.latestBlock && nextBlock < raceTrack.settleBlock) {
       blockhash = undefined;
-      //gaurd against reorg by only loading blockhashs at least 12 blocks old
-      //otherwise (re)write saveed blockhash as if new
-      if (nextBlock <= (raceTrack.latestBlock - 12)) {
-        blockhash = yield call(loadBlockhash, nextBlock);
+      //gaurd against reorg by only loading cached blockhashs at least 24 blocks old
+      //otherwise (re)write cached blockhash as if new
+      if (raceTrack.startBlock <= (raceTrack.latestBlock - blockhashCacheThreshold) && 
+          !!_hashHistory && !!_hashHistory[nextBlock]) {
+        blockhash = _hashHistory[nextBlock];
       }
       if (!blockhash && !raceTrack.raceExpired) {
         const block = yield call(web3.eth.getBlock, nextBlock);
         blockhash = block.hash;
-        yield fork(saveBlockhash, nextBlock, blockhash);
-        //console.log("dl\'d and cached blockhash for "+nextBlock+': '+blockhash);
-      } //else if (!blockhash && raceTrack.raceExpired) 
-        //console.log('expired blockhash for '+nextBlock);
-     //else console.log('found cached blockhash for '+nextBlock+': '+blockhash);
+        yield fork(cacheBlockhash, network, nextBlock, blockhash);
+      }
 
       if (!!blockhash) {
         for (let _lane=1; _lane<=6; _lane++) {
@@ -501,7 +498,7 @@ function* mountRace() {
 }
 
 function* updateRace() {
-  const { web3, account, block, blockRacerC, uiSelectedRace, raceTrack, loadingRace } = yield select();
+  const { web3, network, account, block, blockRacerC, uiSelectedRace, raceTrack, loadingRace } = yield select();
 
   if (!uiSelectedRace || loadingRace || !raceTrack.raceNumber || 
       raceTrack.raceNumber === '0' || raceTrack.raceSettled || 
@@ -509,6 +506,7 @@ function* updateRace() {
     return;
 
   let nextBlock = raceTrack.latestBlock + 1;
+  const expiredUpdate = block.number - nextBlock > 255;
   const racersImmutable = (raceTrack.raceReady) ? true: false;
 
   const _raceTrack = {
@@ -551,24 +549,14 @@ function* updateRace() {
     }
   }
 
-  if (_raceTrack.raceStarted) {
+  if (_raceTrack.raceStarted && !expiredUpdate) {
     let blockhash;
     while (nextBlock <= _raceTrack.latestBlock && nextBlock < _raceTrack.settleBlock) {
-      blockhash = undefined;
-      //gaurd against reorg by only loading saved blockhashs at least
-      //12 blocks old, otherwise (re)write saved blockhash as if new.
-      if (nextBlock <= (_raceTrack.latestBlock - 12)) {
-        blockhash = yield call(loadBlockhash, nextBlock);
-      }
-      if (!blockhash && !_raceTrack.raceExpired) {
+      blockhash = (nextBlock === block.number) ? block.hash : undefined;
+      if (!blockhash) {
         const block = yield call(web3.eth.getBlock, nextBlock);
         blockhash = block.hash;
-        yield fork(saveBlockhash, nextBlock, blockhash);
-        //console.log("dl\'d and cached blockhash for "+nextBlock+': '+blockhash);
-      } //else if (!blockhash && _raceTrack.raceExpired) 
-        //console.log('expired blockhash for '+nextBlock);
-      //else console.log('found cached blockhash for '+nextBlock+': '+blockhash);
-
+      }
       if (!!blockhash) {
         for (let _lane=1; _lane<=6; _lane++) {
           if (!_raceTrack.laneValues['L'+(_lane-1)]['$'+nextBlock]) {
@@ -576,6 +564,7 @@ function* updateRace() {
               processLaneValues(web3, blockhash, _raceTrack.racers[_lane-1]);
           }
         }
+        yield fork(cacheBlockhash, network, nextBlock, blockhash);
       } else _raceTrack.dataExpired = true;
       nextBlock++;
     }

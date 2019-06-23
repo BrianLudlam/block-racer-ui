@@ -1,4 +1,5 @@
 import { eventChannel, buffers, END } from 'redux-saga';
+
 export const BigNumber = require('bignumber.js');
 export const Entity = require("./contracts/IEntity.json");
 export const EntityAddress = '0x725e882ED026B5F90ACCe6E02Ee1f27FBCbe1928';
@@ -109,29 +110,6 @@ export const loadAccountState = (account) => {
     return undefined;
   }
 };
-
-export const saveBlockhash = (number, hash) => {
-  if (!number || !hash) return; 
-  try {
-    const serialized = JSON.stringify(hash);
-    localStorage.setItem(`BlockRacer/blockHash/block${number}`, serialized);
-  } catch (e) {
-    console.error('BlockHash cache store fail: error', e);
-  }
-};
-
-export const loadBlockhash = (number) => {
-  if (!number) return; 
-  try {
-    const serialized = localStorage.getItem(`BlockRacer/blockHash/block${number}`);
-    if (serialized === null) return undefined;
-    else return JSON.parse(serialized);
-  } catch (e) {
-    console.error('Cached blockHash retreival fail: error', e);
-    return undefined;
-  }
-};
-
 
 export const accountTopic = (place, topic) => 
   //entity = transfer-from, nameChange,and spawned
