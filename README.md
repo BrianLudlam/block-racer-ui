@@ -52,10 +52,10 @@ https://github.com/BrianLudlam/block-racer
 
 ### Ropsten testnet
 
-https://block-racer.web.app/
+https://block-racer.web.app/<br/>
 *requires a browser with Web3 Provider, like MetaMask, and an account with some test Eth on Ropsten testnet.
 
-Block Racer Token Contract Address: 0xf48D50efc893cA6B41B93De06Fa2D703D523Cb9C
+Block Racer Token Contract Address: 0xf48D50efc893cA6B41B93De06Fa2D703D523Cb9C<br/>
 Block Racer Contract Address: 0x92d03676E75a01993B3179Dc4d55fe56Ac24f2A6
 
 (Ropsten Faucet for test ether: https://faucet.ropsten.be/)
