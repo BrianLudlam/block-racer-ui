@@ -10,7 +10,7 @@ class DappNavbar extends PureComponent {
 
   render() {
     const { loadingWeb3, web3Error, networkSyncing, networkName, blockNumber, account, 
-            balanceView, exp, newEventCount, newTxCount, newRacerCount, 
+            accountError, balanceView, exp, newEventCount, newTxCount, newRacerCount, 
             dispatch } = this.props;
     
     return (
@@ -21,23 +21,34 @@ class DappNavbar extends PureComponent {
               <span style={{fontSize: "20px", color: "white"}}>
                 Block Racer
               </span>
-              {(!!web3Error) ? 
-                <span style={{fontSize: "20px", paddingLeft: "4px", color: "red"}}>
-                  {web3Error}
-                </span> : 
+              {!web3Error && ( 
                 <BlockClock 
                   networkSyncing={networkSyncing} 
                   networkName={(loadingWeb3) ? null : networkName}
-                  blockNumber={(loadingWeb3) ? null : blockNumber}/>}
+                  blockNumber={(loadingWeb3) ? null : blockNumber}/>)}
             </Row>
-            <Row style={{lineHeight: "14px",whiteSpace: 'nowrap'}}>
-              <span style={{fontSize: "14px", color: "#ccc", paddingRight: "4px"}}>
-                account
-              </span>
-              <span style={{fontSize: "9px", color: "#ffc107", paddingTop: "1px"}}>
-                {account}
-              </span>
-            </Row>
+            {(!!web3Error) ? (
+              <Row style={{whiteSpace: 'nowrap', lineHeight: "18px", paddingTop: "8px"}}>
+                <span style={{fontSize: "18px", color: "red"}}>
+                  {web3Error}
+                </span>
+              </Row>) : 
+              (!web3Error && !!accountError) ? (
+              <Row style={{whiteSpace: 'nowrap', lineHeight: "18px", paddingTop: "8px"}}>
+                <span style={{fontSize: "18px", color: "red"}}>
+                  {accountError}
+                </span>
+              </Row>) : (
+              <Row style={{lineHeight: "14px", whiteSpace: 'nowrap'}}>
+                <span style={{fontSize: "14px", color: "#ccc", paddingRight: "4px"}}>
+                  account
+                </span>
+                <span style={{fontSize: "9px", color: "#ffc107", paddingTop: "1px"}}>
+                  {account}
+                </span>
+              </Row>)
+            }
+            {!web3Error && !accountError && (
             <Row style={{lineHeight: "14px", paddingBottom: "4px", whiteSpace: 'nowrap'}}>
               <span style={{fontSize: "14px", color: "#ccc", paddingRight: "4px"}}>
                 balance
@@ -57,7 +68,7 @@ class DappNavbar extends PureComponent {
               <span style={{fontSize: "14px", color: "#fff"}}>
                 {'experience'}
               </span>
-            </Row>
+            </Row>)}
           </Col>
           <Col offset={2} xs={2} sm={2} md={2} lg={2} xl={2} style={{height: "100%"}}>
             <Button className="hover-yellow" size="large" ghost type="link" style={{padding: "0px 0px 0px 24px"}} 

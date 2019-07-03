@@ -33,14 +33,14 @@ class App extends Component {
   }
 
   render() {
-    const { loadingWeb3, web3Error, loadingRace, uiSelectedRace, recentRaces } = this.props;
+    const { loadingWeb3, web3Error, accountError, loadingRace, uiSelectedRace, recentRaces } = this.props;
     return (
       <Layout>
         <DappNavbar />
         <Layout>
           <Content>
-            {!loadingWeb3 && !web3Error && <RacerCreateFormModal />}
-            {!loadingWeb3 && !web3Error && <RightDrawerView />}
+            {!loadingWeb3 && !web3Error && !accountError && <RacerCreateFormModal />}
+            {!loadingWeb3 && !web3Error && !accountError && <RightDrawerView />}
             {!loadingWeb3 && !web3Error && (
             <Row style={{ marginTop: "4px" }}>
               <Col xs={15} sm={15} md={15} lg={12} xl={12} xxl={12}>
@@ -57,7 +57,13 @@ class App extends Component {
                   Waiting for Web3 Provider...
                 </span></span>
               ) : (!!web3Error) ? (
-                <span>Install and activate MetaMask, or any Web3 Provider, to continue.</span>
+                <span>
+                  {'To use this Dapp, first install and activate a Web3 Provider, such as '}
+                  <a href="https://metamask.io/" target="_blank" rel="noopener noreferrer"> 
+                    MetaMask
+                  </a>
+                  {'.'}
+                </span>
               ) : (!uiSelectedRace && !recentRaces) ? (
                 <span>Loading races...</span>
               ) : (!uiSelectedRace && !recentRaces.length) ? (
@@ -87,6 +93,7 @@ class App extends Component {
 App.propTypes = {
   loadingWeb3: PropTypes.bool,
   web3Error: PropTypes.string,
+  accountError: PropTypes.string,
   loadingRace: PropTypes.bool,
   uiSelectedRace: PropTypes.string,
   recentRaces: PropTypes.array
@@ -95,6 +102,7 @@ App.propTypes = {
 export default connect((state) => ({
   loadingWeb3: state.loadingWeb3,
   web3Error: state.web3Error,
+  accountError: state.accountError,
   loadingRace: state.loadingRace,
   uiSelectedRace: state.uiSelectedRace,
   recentRaces: state.recentRaces,

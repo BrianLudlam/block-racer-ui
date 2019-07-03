@@ -131,7 +131,7 @@ const appReducer = (state = initialState, action) =>
         draft.balance = action.balance;
         draft.balanceView = (!!draft.balance) ? parseFloat(draft.balance).toFixed(6).toString() : '0';
         draft.exp = action.exp;
-        if (!action.account)  draft.accountError = "Unable to load account.";
+        if (!action.account)  draft.accountError = "Please select a Web3 Provider account.";
       	draft.loadingAccount = false;
       	draft.mountingAccount = true;
         break;
