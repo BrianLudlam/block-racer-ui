@@ -191,7 +191,7 @@ class RaceTrack extends PureComponent {
   }
 
   render() {
-    const { raceNumber, raceDistance, conditionsView, racers, raceReady, 
+    const { account, blockRacerC, raceNumber, raceDistance, conditionsView, racers, raceReady, 
       settleState, startBlock, raceLevel, settleBlock, latestBlock, lanesReady, 
       raceStarted, lanesSettled, raceSettled, raceExpired, myRacerNames, dataExpired,
       dispatch } = this.props;
@@ -209,8 +209,6 @@ class RaceTrack extends PureComponent {
 
     const orderedSnapshot = (!snapshot.length) ? [] :
       [...snapshot].sort(placeSort);
-
-      console.log('orderedSnapshot: ', orderedSnapshot)
 
     return (
     <div>
@@ -318,21 +316,34 @@ class RaceTrack extends PureComponent {
         {(this.isFinished && !raceSettled && settleBlock <= (latestBlock+1)) ? (
         <Col xs={8} sm={8} md={8} lg={6} xl={4} xxl={3}>
           <Button type="ghost" style={{margin: "6px", color:"#002950", backgroundColor: "#f0f2f5"}}
-            onClick={() => Modal.confirm({
-              centered: true,
-              title: 'Settle Race?',
-              content: <div><p>{'Each race requires 7 settlement transactions to finalize results. '+
-                'One for each of 6 lanes, and one more to compare results and payout winners. '}</p>
-                <p>{'Settlement Reward: 4 finney for the first successful settle tx, 5 finney for the last, and the '+
-                'rest 3 finney. First come, first served. If race is already settled when '+
-                'transaction goes through, contract will attempt to find another race to settle, '+
-                'before failing.'}</p>
-                <p>{'Provider (MetaMask) will follow to confirm transaction.'}</p></div>,
-              okText: <span style={{color: "#002950"}}>Settle</span>,
-              cancelText: <span style={{color: "#002950"}}>Cancel</span>,
-              onOk() { dispatch(sendTx(settleRaceTx(raceNumber))); },
-              onCancel() {},
-            })}>
+            onClick={async () => {
+              let gas = '';
+              try {
+                gas = await blockRacerC.methods.settleRace(
+                  raceNumber
+                ).estimateGas({from: account});
+              } catch (e) { gas = 'TX MAY FAIL'; }
+              Modal.confirm({
+                centered: true,
+                title: 'Settle Race?',
+                content: 
+                <Col>
+                  <Row>{'Each race requires 7 settlement transactions to finalize race results, '+
+                    'one for each of 6 lanes, and one more to compare results and payout winners. '+
+                    'If race is already settled when a transaction goes through, contract will attempt to find another race to settle, '+
+                    'before failing. Provider (MetaMask) will follow to confirm transaction.'}</Row>
+                  <Row><strong>{"Settlement Rewards: "}</strong></Row>
+                  <Row><strong><ul><li>{'1st Settlement Reward: 4 finney'}</li>
+                      <li>{'2nd-6th Settlement Rewards: 3 finney'}</li>
+                      <li>{'Final Settlement Reward: 5 finney'}</li></ul></strong></Row>
+                  <Row><strong>{"Est gas: "+gas+" gwei"}</strong></Row>
+                </Col>,
+                okText: <span style={{color: "#002950"}}>Settle</span>,
+                cancelText: <span style={{color: "#002950"}}>Cancel</span>,
+                onOk() { dispatch(sendTx(settleRaceTx(raceNumber))); },
+                onCancel() {},
+              })
+            }}>
             Settle Race
           </Button>
         </Col>
@@ -405,6 +416,8 @@ class RaceTrack extends PureComponent {
 }
 
 RaceTrack.propTypes = {
+  account: PropTypes.string, 
+  blockRacerC: PropTypes.object, 
   raceNumber: PropTypes.string, 
   racers: PropTypes.array, 
   myRacerNames: PropTypes.object, 
@@ -426,6 +439,8 @@ RaceTrack.propTypes = {
 }
 
 export default connect((state) => ({
+  account: state.account,
+  blockRacerC: state.blockRacerC, 
   raceNumber: state.raceTrack.raceNumber, 
   racers: state.raceTrack.racers, 
   myRacerNames: state.raceTrack.myRacerNames, 

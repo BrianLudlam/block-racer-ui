@@ -2,9 +2,11 @@ import { eventChannel, buffers, END } from 'redux-saga';
 
 export const BigNumber = require('bignumber.js');
 export const Entity = require("./contracts/IEntity.json");
-export const EntityAddress = '0x725e882ED026B5F90ACCe6E02Ee1f27FBCbe1928';
+export const EntityAddress = '0xf48D50efc893cA6B41B93De06Fa2D703D523Cb9C';
 export const BlockRacer = require("./contracts/IBlockRacer.json");
-export const BlockRacerAddress = '0x1E31cEBA5047254c3BF37dB4e86bF2b03B83839b';
+export const BlockRacerAddress = '0x92d03676E75a01993B3179Dc4d55fe56Ac24f2A6';
+
+export const BlockRacerGenesis = 5902940;
 
 export const CREATION_FEE = new BigNumber("4000000000000000");//4 finney
 export const RACE_FEE = new BigNumber("4000000000000000");//4 finney
@@ -131,23 +133,28 @@ const cleanEvent = (e) => ({
     (e.event === 'Transfer') ? {
       to: e.returnValues.to.toString(),
       from: e.returnValues.from.toString(),
-      tokenId: e.returnValues.tokenId.toString()
+      tokenId: e.returnValues.tokenId.toString(),
+      timestamp: parseInt(e.returnValues.timestamp,10)
     } : (e.event === 'Spawned') ? {
       owner: e.returnValues.owner.toString(),
       entity: e.returnValues.entity.toString(),
-      spawner: e.returnValues.spawner.toString()
+      spawner: e.returnValues.spawner.toString(),
+      timestamp: parseInt(e.returnValues.timestamp,10)
     } : (e.event === 'NameChanged') ? {
       owner: e.returnValues.owner.toString(),
       entity: e.returnValues.entity.toString(),
-      name: e.returnValues.name.toString().replace(/[^A-Za-z0-9\s$%&*!@-_().]/ig, "")
+      name: e.returnValues.name.toString().replace(/[^A-Za-z0-9\s$%&*!@-_().]/ig, ""),
+      timestamp: parseInt(e.returnValues.timestamp,10)
     } : (e.event === 'RaceEntered' || e.event === 'RaceExited') ? {
       owner: e.returnValues.owner.toString(),
       racer: e.returnValues.racer.toString(),
       race: e.returnValues.race.toString(),
+      level: parseInt(e.returnValues.level,10),
       lane: parseInt(e.returnValues.lane,10),
       timestamp: parseInt(e.returnValues.timestamp,10)
     } : (e.event === 'RaceStarted') ? {
       race: e.returnValues.race.toString(),
+      level: parseInt(e.returnValues.level,10),
       distance: parseInt(e.returnValues.distance,10),
       conditions: parseInt(e.returnValues.conditions,10),
       timestamp: parseInt(e.returnValues.timestamp,10)
@@ -155,9 +162,11 @@ const cleanEvent = (e) => ({
       owner: e.returnValues.owner.toString(),
       racer: e.returnValues.racer.toString(),
       race: e.returnValues.race.toString(),
+      level: parseInt(e.returnValues.level,10),
       place: parseInt(e.returnValues.place,10),
       splits: parseInt(e.returnValues.splits,10),
       distance: parseInt(e.returnValues.distance,10),
+      exp: (!!e.returnValues.exp) ? parseInt(e.returnValues.exp,10) : 0,
       timestamp: parseInt(e.returnValues.timestamp,10)
     } : (e.event === 'RacerTrained') ? {
       owner: e.returnValues.owner.toString(),
@@ -288,7 +297,7 @@ export const mapRacerSpawnState = (racer, blockNumber) => {
   }else if (!hasNullGenes && age < 187) {
     racer.state = "SPAWNING";
     racer.spawnReady = 0;
-    racer.spawnView = 'Spawn in '+(187 - age)+' sec';
+    racer.spawnView = 'Spawning in '+(187 - age)+' sec';
     racer.expireView = '';
   }else if (!racer.state || racer.state === "CREATING" || racer.state === "SPAWNING") {
     racer.state = "IDLE";
@@ -519,24 +528,25 @@ export const raceCost = (racer) => (
   COST_MULT.times(racerLevel(racer)).plus(COST_BASE).plus(RACE_FEE)
 );
 
+export const racingFeeByLevel = (level) => (
+  (!level) ? 18 : (((level * 1.8) + 18).toFixed(1))
+);
+
 export const raceWagerView = (racer) => (
   (!racer || !racer.level) ? '18 finney' : 
     (((racer.level * 1.8) + 18).toFixed(1))+' finney'
 );
 
-export const firstRewardView = (racer) => (
-  (!racer || !racer.level) ? '48 finney' : 
-    (((racer.level * 4.8) + 48).toFixed(1))+' finney'
+export const firstRewardView = (level) => (
+  (!level) ? '48 finney' : (((level * 4.8) + 48).toFixed(1))+' finney'
 );
 
-export const secondRewardView = (racer) => (
-  (!racer || !racer.level) ? '36 finney' : 
-    (((racer.level * 3.6) + 36).toFixed(1))+' finney'
+export const secondRewardView = (level) => (
+  (!level) ? '36 finney' : (((level * 3.6) + 36).toFixed(1))+' finney'
 );
 
-export const thirdRewardView = (racer) => (
-  (!racer || !racer.level) ? '24 finney' : 
-    (((racer.level * 2.4) + 24).toFixed(1))+' finney'
+export const thirdRewardView = (level) => (
+  (!level) ? '24 finney' : (((level * 2.4) + 24).toFixed(1))+' finney'
 );
 
 export const levelValue = (_level) => (

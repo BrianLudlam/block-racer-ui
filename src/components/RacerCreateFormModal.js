@@ -1,15 +1,41 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
-import { Modal, Form, Input, Select, Radio } from 'antd';
+import { Modal, Form, Input, Select, Radio, Row, Col } from 'antd';
 import { uiToggleCreateModal, sendTx } from '../actions';
-import { createRacerTx } from '../constants';
+import { createRacerTx, CREATION_FEE } from '../constants';
 
 const RacerCreateFormModal = Form.create({ name: 'racer_create_form' })(
   // eslint-disable-next-line
   class extends Component {
+    state = { gas: '' } 
+    
+    estimateGas = async () => {
+      const { entityC, account, form: { getFieldValue } } = this.props;
+      if (!account || !entityC || !getFieldValue) return;
+
+      const name = getFieldValue('createType');
+      const pA = getFieldValue('racerA');
+      const pB = getFieldValue('racerB');
+      let gas = '';
+      try {
+        gas = await entityC.methods.createEntity(
+          name || '', 
+          (pA && pB) ? pA : 0, 
+          (pA && pB) ? pB : 0
+        ).estimateGas({value: CREATION_FEE, from: account});
+      } catch (e) { gas = 'TX MAY FAIL'; }
+      this.setState({ gas });
+    }
+    componentDidMount() {
+      this.estimateGas();
+    }
+    componentDidUpdate() {
+      this.estimateGas();
+    }
     render() {
       const { uiCreateModalOpen, form, racers, racer, dispatch } = this.props;
+      const { gas } = this.state;
       
       const { getFieldDecorator, getFieldValue } = form;
       const createType = getFieldValue('createType')
@@ -39,13 +65,13 @@ const RacerCreateFormModal = Form.create({ name: 'racer_create_form' })(
               //dispatch create tx, delay create close
             });
           }}>
-          <div>
-            <p>{'Each Block Racer is a standard (ERC721) tradable non-fungible token. '+
-              'Each created racer requires a paired Spawn transaction.'}</p>
-            <p>{'Creation Fee: 4 finney. *Payed-in-full to Spawner. Spawning Racers is '+
-              'open to anyone, first come first served.'}</p>
-            <p>{'Provider (MetaMask) will follow to confirm transaction.'}</p>
-          </div>
+          <Col>
+            <Row>{'Each Block Racer is a standard (ERC721) tradable non-fungible token. '+
+              'Once created, a Block Racer also requires a Spawn transaction, to give the Block Racer it\'s relatively unique genes / skill potentials.'+
+              ' Provider (MetaMask) will follow to confirm transaction.'}</Row>
+            <Row><strong>{"Creation Fee: 4 finney *spawner reward"}</strong></Row>
+            <Row><strong>{"Est gas: "+gas+" gwei"}</strong></Row>
+          </Col>
           <Form layout="inline">
             <Form.Item label="Name">
               {getFieldDecorator('createName', {
@@ -122,12 +148,16 @@ const RacerCreateFormModal = Form.create({ name: 'racer_create_form' })(
   //wrappedComponentRef={(formRef) => { this.formRef = formRef; }}
 
 RacerCreateFormModal.propTypes = {
+  entityC: PropTypes.object,
+  account: PropTypes.string,
   uiCreateModalOpen: PropTypes.bool,
   racers: PropTypes.array,
   racer: PropTypes.object
 }
 
 export default connect((state) => ({
+  entityC: state.entityC,
+  account: state.account,
   uiCreateModalOpen: state.uiCreateModalOpen,
   racers: state.racers,
   racer: state.racer

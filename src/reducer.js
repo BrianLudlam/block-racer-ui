@@ -29,6 +29,9 @@ export const initialState = {
   txLog: {},
   events: [],
   eventLog: {},
+  newEventCount: 0,
+  newTxCount: 0,
+  newRacerCount: 0,
   racer: {},
   racers: [],
   races: {},
@@ -123,11 +126,12 @@ const appReducer = (state = initialState, action) =>
         break;
 
       case ACCOUNT_CHANGED:
-      	draft.account = action.account;
-      	draft.accountView = action.accountView;
-      	draft.balance = action.balance;
-      	draft.balanceView = (!!draft.balance) ? parseFloat(draft.balance).toFixed(6).toString() : '0';
-      	draft.exp = action.exp;
+        draft.account = action.account;
+        draft.accountView = action.accountView;
+        draft.balance = action.balance;
+        draft.balanceView = (!!draft.balance) ? parseFloat(draft.balance).toFixed(6).toString() : '0';
+        draft.exp = action.exp;
+        if (!action.account)  draft.accountError = "Unable to load account.";
       	draft.loadingAccount = false;
       	draft.mountingAccount = true;
         break;
@@ -160,7 +164,12 @@ const appReducer = (state = initialState, action) =>
       case CONTRACT_EVENT:
       	const e = action.event;
       	if (!e || !e.id) break;
+        const prevRacerCount = draft.racers.length;
       	mapEventToState(e, draft);
+        draft.newEventCount += 1;
+        if (prevRacerCount < draft.racers.length) {
+          draft.newRacerCount += 1;
+        }
         break;
 
      	case RECENT_RACES_UPDATED:
@@ -202,6 +211,7 @@ const appReducer = (state = initialState, action) =>
   			if (!action.tx) break;
         //console.log('tx: ',action.tx)
 	      if (action.tx.type === 'hash' && !draft.txLog[action.tx.hash]) {
+          draft.newTxCount += 1;
 	      	draft.txLog[action.tx.hash] = {
 	      		transactionHash: action.tx.hash, 
 	      		confirmCount: 0, 
@@ -294,6 +304,9 @@ const appReducer = (state = initialState, action) =>
           draft.uiRightDrawerView = (action.view === 'events') ? 'events' : 
             (action.view === 'txs') ? 'txs' : 'racers';
           draft.uiRightDrawerOpen = true;
+          if (action.view === 'events') draft.newEventCount = 0;
+          else if (action.view === 'txs') draft.newTxCount = 0;
+          else if (action.view === 'racers') draft.newRacerCount = 0;
         } else draft.uiRightDrawerOpen = false;
         break;
 

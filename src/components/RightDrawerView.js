@@ -1,23 +1,56 @@
 import React, { PureComponent } from 'react';
 import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
-import { Button, Drawer, List, Select, Radio, Progress, Row, 
-         Icon, Badge, Modal } from 'antd';
+import { Button, Drawer, List, Select, Radio, Progress, Row, Col,
+         Icon, Badge, Modal, notification } from 'antd';
 import { ADDRESS_ZERO, levelView, levelPercent, accelView, accelPercent, accelTrainable, 
          topView, topPercent, topTrainable, tractionTrainable, tractionView, tractionPercent, 
          avgSpeed, totalNewTraining, expLeft, expLeftView, expLeftPercent, trainRacerTx,
          enterRaceTx, exitRaceTx, spawnRacerTx, isTrainable, raceWagerView, racerLevel, 
-         firstRewardView, secondRewardView, thirdRewardView, levelBeforeTraining
-       } from '../constants';
+         firstRewardView, secondRewardView, thirdRewardView, levelBeforeTraining,
+         racingFeeByLevel, raceCost } from '../constants';
 import { uiRacerSelected, uiRaceSelected, uiChangeDrawerView, racerUpdated, sendTx, 
          uiToggleCreateModal } from '../actions';
 
+notification.config({
+  placement: 'bottomLeft',
+  bottom: 50,
+  duration: 4,
+  style: {
+    margin: 0,
+    padding: 0,
+    border: 0
+  }
+});
+
+const notificationsOn = false;
+
 class RightDrawerView extends PureComponent {
 
+  eventsShown = {};
+
+  componentDidUpdate(prevProps) {
+    const { loadingAccount, mountingAccount, events, eventLog, block, dispatch } = this.props;
+
+    if (notificationsOn && !loadingAccount && !mountingAccount && events !== prevProps.events ) {
+      events.forEach((e) => {
+        if(!this.eventsShown[e] && !!eventLog[e] && 
+          block.number - eventLog[e].blockNumber < 12 ) {
+          this.eventsShown[e] =  true;
+          notification.open({
+            message: eventLog[e].event+' Event',
+            description: this.eventLogView(eventLog[e], dispatch),
+            key: e
+          });
+        }
+      })
+    }
+  }
+
   render () {
-    const { loadingAccount, mountingAccount, exp, txs, txLog, events, eventLog, racers, 
-            racer, races, stats, uiSelectedRacer, uiRightDrawerOpen, uiRightDrawerView,
-            uiSelectedRace, dispatch } = this.props;
+    const { entityC, blockRacerC, loadingAccount, mountingAccount, exp, txs, txLog, 
+            account, events, eventLog, racers, racer, races, stats, uiSelectedRacer, 
+            uiRightDrawerOpen, uiRightDrawerView, uiSelectedRace, dispatch } = this.props;
 
     return (
       <Drawer
@@ -132,22 +165,30 @@ class RightDrawerView extends PureComponent {
           {racer["$"+uiSelectedRacer].state === 'CREATING' && racer["$"+uiSelectedRacer].spawnReady <= 1 && (
           <Row size="small" type="flex" justify="center">
             <Button size="small" type="ghost" style={{float: "right", marginTop: "4px", marginBottom: "4px", color:"#002950"}}
-              onClick={() => Modal.confirm({
-                centered: true,
-                title: 'Spawn next Block Racer?',
-                content: <div><p>{'Each created Block Racer requires a Spawn transaction, open to anyone. '+
-                  'Transaction will spawn the next Block Racer in spawning queue.'}</p>
-                  <p>{'Spawn Reward: 4 finney. *Payed by creator. Transaction is '+
-                    'open to anyone. First come, first served.'}</p>
-                  <p>{'Provider (MetaMask) will follow to confirm transaction.'}</p></div>,
-                okText: <span style={{color: "#002950"}}>Spawn</span>,
-                cancelText: <span style={{color: "#002950"}}>Cancel</span>,
-                onOk() {
-                  dispatch(sendTx(spawnRacerTx()));
-                  //return;
-                },
-                onCancel() {},
-              })}>
+              onClick={async () => {
+                let gas = '';
+                try {
+                  gas = await entityC.methods.spawnEntity().estimateGas({from: account});
+                } catch (e) { gas = 'TX MAY FAIL'; }
+                Modal.confirm({
+                  centered: true,
+                  title: 'Spawn the next Block Racer?',
+                  content: 
+                    <Col><Row>{'Each created Block Racer requires a Spawn transaction, open to anyone. '+
+                    'The transaction will semi-blindly spawn the next Block Racer in the spawning queue. Spawning provides '+
+                    ' a Block Racer with genes, it\'s unique skill potentials. Once created, a Block Racer must be Spawned with 256 blocks,'+
+                    ' or it will expire, resulting in permanently zeroed genes.'+
+                    ' Provider (MetaMask) will follow to confirm transaction.'}</Row>
+                    <Row><strong>{"Reward: 4 finney"}</strong></Row>
+                    <Row><strong>{"Est gas: "+gas+" gwei"}</strong></Row></Col>,
+                  okText: <span style={{color: "#002950"}}>Spawn</span>,
+                  cancelText: <span style={{color: "#002950"}}>Cancel</span>,
+                  onOk() {
+                    dispatch(sendTx(spawnRacerTx()));
+                  },
+                  onCancel() {},
+                });
+              }}>
               Spawn Racer
             </Button>
           </Row>)}
@@ -251,19 +292,29 @@ class RightDrawerView extends PureComponent {
           {racer["$"+uiSelectedRacer].state === "TRAIN" && !!totalNewTraining(racer["$"+uiSelectedRacer]) && (
           <Row size="small">
             <Button size="small" type="ghost" style={{marginTop: "8px", marginBottom: "4px", marginLeft: "20px", color:"#002950"}}
-              onClick={() => Modal.confirm({
-                centered: true,
-                title: 'Train racer with '+totalNewTraining(racer["$"+uiSelectedRacer])+' exp (of '+exp+' exp)?',
-                content: <div><p>{'Training Block Racers costs experience points (exp). Experience '+
-                    'points are earned by racing Block Racers.'}</p>
-                  <p>{'Provider (MetaMask) will follow to confirm transaction.'}</p></div>,
-                okText: <span style={{color: "#002950"}}>Train</span>,
-                cancelText: <span style={{color: "#002950"}}>Cancel</span>,
-                onOk() {
-                  dispatch(sendTx(trainRacerTx(uiSelectedRacer, racer["$"+uiSelectedRacer].training)));
-                },
-                onCancel() {},
-              })}>
+              onClick={async () => {
+                let gas = '';
+                try {
+                  gas = await blockRacerC.methods.train(
+                    uiSelectedRacer, racer["$"+uiSelectedRacer].training
+                  ).estimateGas({from: account});
+                } catch (e) { gas = 'TX MAY FAIL'; }
+                Modal.confirm({
+                  centered: true,
+                  title: 'Train Block Racer with '+totalNewTraining(racer["$"+uiSelectedRacer])+' exp (of '+exp+' exp)?',
+                  content: 
+                    <Col><Row>{"Training Block Racers costs experience points. "+
+                    "Experience points are earned by racing Block Racers. "+
+                    "Provider (MetaMask) will follow to confirm transaction."}</Row>
+                    <Row><strong>{"Est gas: "+gas+" gwei"}</strong></Row></Col>,
+                  okText: <span style={{color: "#002950"}}>Train</span>,
+                  cancelText: <span style={{color: "#002950"}}>Cancel</span>,
+                  onOk() {
+                    dispatch(sendTx(trainRacerTx(uiSelectedRacer, racer["$"+uiSelectedRacer].training)));
+                  },
+                  onCancel() {},
+                });
+              }}>
               Train Racer
             </Button>
             <Button size="small" type="ghost" style={{marginTop: "8px", marginBottom: "4px",marginLeft: "20px", color:"#002950"}}
@@ -331,42 +382,60 @@ class RightDrawerView extends PureComponent {
             </Select>
             {racer["$"+uiSelectedRacer].state === 'IDLE' && (
             <Button type="ghost" style={{float: "right", marginTop: "-6px", marginBottom: "4px", color:"#002950", backgroundColor: "#f0f2f5"}}
-              onClick={() => Modal.confirm({
-                centered: true,
-                title: 'Enter level '+((!racer["$"+uiSelectedRacer].level)?'0': racer["$"+uiSelectedRacer].level)+' race queue?',
-                content: <div><p>{'Races start for every 6 racers queued at any specific level. '}</p>
-                <p>{'Level '+((!racer["$"+uiSelectedRacer].level)?'0': racer["$"+uiSelectedRacer].level)+
-                  ' Racing Fee: '+raceWagerView(racer["$"+uiSelectedRacer])+'. *payed-in-full to race winners.'}</p>
-                <ul><li>{'First Place Reward: '+firstRewardView(racer["$"+uiSelectedRacer])}</li>
-                <li>{'Second Place Reward: '+secondRewardView(racer["$"+uiSelectedRacer])}</li>
-                <li>{'Third Place Reward: '+thirdRewardView(racer["$"+uiSelectedRacer])}</li></ul>
-                <p>{'Settlement Fee: 4 finney. *payed-in-full to race settlers.'}</p>
-                <p>{'Provider (MetaMask) will follow to confirm transaction.'}</p></div>,
-                okText: <span style={{color: "#002950"}}>Race</span>,
-                cancelText: <span style={{color: "#002950"}}>Cancel</span>,
-                onOk() {
-                  dispatch(sendTx(enterRaceTx(uiSelectedRacer, racer["$"+uiSelectedRacer])));
-                },
-                onCancel() {},
-              })}>
+              onClick={async () => {
+                let gas = '';
+                try {
+                  gas = await blockRacerC.methods.enterRaceQueue(
+                    uiSelectedRacer
+                  ).estimateGas({from: account, value: raceCost(racer["$"+uiSelectedRacer])});
+                } catch (e) { gas = 'TX MAY FAIL'; }
+                Modal.confirm({
+                  centered: true,
+                  title: 'Enter Level '+((!racer["$"+uiSelectedRacer].level)?'0': racer["$"+uiSelectedRacer].level)+' Race Queue?',
+                  content: 
+                    <Col><Row>{'Races start on every 6 racers at any specific level in the rcace queue. Provider (MetaMask) will follow to confirm transaction.'}</Row>
+                    <Row><strong>{'Level '+((!racer["$"+uiSelectedRacer].level)?'0': racer["$"+uiSelectedRacer].level)+
+                    ' Racing Fee: '+raceWagerView(racer["$"+uiSelectedRacer])}</strong></Row>
+                    <Row><strong><ul><li>{'First Place Reward: '+firstRewardView(racer["$"+uiSelectedRacer].level)}</li>
+                      <li>{'Second Place Reward: '+secondRewardView(racer["$"+uiSelectedRacer].level)}</li>
+                      <li>{'Third Place Reward: '+thirdRewardView(racer["$"+uiSelectedRacer].level)}</li></ul></strong></Row>
+                    <Row><strong>{'Settlement Fee: 4 finney. *settler rewards'}</strong></Row>
+                    <Row><strong>{"Est gas: "+gas+" gwei"}</strong></Row></Col>,
+                  okText: <span style={{color: "#002950"}}>Race</span>,
+                  cancelText: <span style={{color: "#002950"}}>Cancel</span>,
+                  onOk() {
+                    dispatch(sendTx(enterRaceTx(uiSelectedRacer, racer["$"+uiSelectedRacer])));
+                  },
+                  onCancel() {},
+                });
+              }}>
               Enter Race
             </Button>)}
             {racer["$"+uiSelectedRacer].state === 'QUEUEING' && (
             <Button type="ghost" style={{float: "right", marginTop: "-6px", marginBottom: "4px", color:"#002950", backgroundColor: "#f0f2f5"}}
-              onClick={() => Modal.confirm({
-                centered: true,
-                title: 'Exit race queue?',
-                content:  <div><p>{'Once queued for a race, you may exit the race queue '+
-                'before the race starts, but not after. Once a race starts, '+
-                'entry is final. If successful exit, transaction will refund Racing Fees'}</p>
-                <p>{'Provider (MetaMask) will follow to confirm transaction.'}</p></div>,
-                okText: <span style={{color: "#002950"}}>Exit</span>,
-                cancelText: <span style={{color: "#002950"}}>Cancel</span>,
-                onOk() {
-                  dispatch(sendTx(exitRaceTx(uiSelectedRacer)));
-                },
-                onCancel() {},
-              })}>
+              onClick={async () => {
+                let gas = '';
+                try {
+                  gas = await blockRacerC.methods.exitRaceQueue(
+                    uiSelectedRacer
+                  ).estimateGas({from: account});
+                } catch (e) { gas = 'TX MAY FAIL'; }
+                Modal.confirm({
+                  centered: true,
+                  title: 'Exit Race Queue?',
+                  content:  <Col><Row>{'Once queued for a race, you may exit the race queue '+
+                  'before the race starts, but not after. Once a race starts, '+
+                  'entry is final. If successful exit, transaction will refund Racing Fees. '+
+                  'Provider (MetaMask) will follow to confirm transaction.'}</Row>
+                  <Row><strong>{"Est gas: "+gas+" gwei"}</strong></Row></Col>,
+                  okText: <span style={{color: "#002950"}}>Exit</span>,
+                  cancelText: <span style={{color: "#002950"}}>Cancel</span>,
+                  onOk() {
+                    dispatch(sendTx(exitRaceTx(uiSelectedRacer)));
+                  },
+                  onCancel() {},
+                });
+              }}>
               Exit Race
             </Button>)}
           </Row>
@@ -380,16 +449,19 @@ class RightDrawerView extends PureComponent {
     (!e) ? '' : 
     (e.event === "Transfer" && e.returnValues.from === ADDRESS_ZERO) ?
       <List.Item><span>
-        <strong>{'['+e.blockNumber+']> '}</strong>
+        <strong>{(new Date(e.returnValues.timestamp*1000).toLocaleString())}</strong>
+        <br/>
         {'You Created '}
         <Button type="link" style={{padding: "0"}}
           onClick={() => dispatch(uiRacerSelected({id: e.returnValues.tokenId}))}>
           {'Racer #'+e.returnValues.tokenId}
         </Button>
+        {' (Fee: 4 finney)'}
       </span></List.Item> : 
     (e.event === "Transfer" && e.returnValues.from === e.account) ?
       <List.Item><span>
-        <strong>{'['+e.blockNumber+']> '}</strong>
+        <strong>{(new Date(e.returnValues.timestamp*1000).toLocaleString())}</strong>
+        <br/>
         {'You Traded '}
         <Button type="link" style={{padding: "0"}}
           onClick={() => dispatch(uiRacerSelected({id: e.returnValues.tokenId}))}>
@@ -398,7 +470,8 @@ class RightDrawerView extends PureComponent {
       </span></List.Item> : 
     (e.event === "Transfer") ? //to = user
       <List.Item><span>
-        <strong>{'['+e.blockNumber+']> '}</strong>
+        <strong>{(new Date(e.returnValues.timestamp*1000).toLocaleString())}</strong>
+        <br/>
         {'You Aquired '}
         <Button type="link" style={{padding: "0"}}
           onClick={() => dispatch(uiRacerSelected({id: e.returnValues.tokenId}))}>
@@ -408,21 +481,25 @@ class RightDrawerView extends PureComponent {
     (e.event === "Spawned" && e.returnValues.spawner === e.account && 
         e.returnValues.owner === e.account) ? 
       <List.Item><span>
-        <strong>{'['+e.blockNumber+']> '}</strong>
+        <strong>{(new Date(e.returnValues.timestamp*1000).toLocaleString())}</strong>
+        <br/>
         {'You Spawned '}
         <Button type="link" style={{padding: "0"}}
           onClick={() => dispatch(uiRacerSelected({id: e.returnValues.entity}))}>
           {'Racer #'+e.returnValues.entity}
         </Button>
+        {' (Reward: 4 finney)'}
       </span></List.Item> : 
     (e.event === "Spawned" && e.returnValues.spawner === e.account) ? 
       <List.Item><span>
-        <strong>{'['+e.blockNumber+']> '}</strong>
-        {'You Spawned Racer #'+e.returnValues.entity}
+        <strong>{(new Date(e.returnValues.timestamp*1000).toLocaleString())}</strong>
+        <br/>
+        {'You Spawned Racer #'+e.returnValues.entity+' (Reward: 4 finney)'}
       </span></List.Item> : 
     (e.event === "Spawned") ? 
       <List.Item><span>
-        <strong>{'['+e.blockNumber+']> '}</strong>
+        <strong>{(new Date(e.returnValues.timestamp*1000).toLocaleString())}</strong>
+        <br/>
         {'Someone Spawned '}
         <Button type="link" style={{padding: "0"}}
           onClick={() => dispatch(uiRacerSelected({id: e.returnValues.entity}))}>
@@ -431,7 +508,8 @@ class RightDrawerView extends PureComponent {
       </span></List.Item> : 
     (e.event === "RaceEntered") ?
       <List.Item><span>
-        <strong>{'['+e.blockNumber+']> '}</strong>
+        <strong>{(new Date(e.returnValues.timestamp*1000).toLocaleString())}</strong>
+        <br/>
         {'You Entered '}
         <Button type="link" style={{padding: "0"}}
           onClick={() => dispatch(uiRacerSelected({id: e.returnValues.racer}))}>
@@ -442,10 +520,12 @@ class RightDrawerView extends PureComponent {
           onClick={() => dispatch(uiRaceSelected({id: e.returnValues.race}))}>
           {'Race #'+e.returnValues.race}
         </Button>
+        {' (Fee: '+(racingFeeByLevel(e.returnValues.level) + 4)+' finney)'}
       </span></List.Item> : 
     (e.event === "RaceExited") ?
       <List.Item><span>
-        <strong>{'['+e.blockNumber+']> '}</strong>
+        <strong>{(new Date(e.returnValues.timestamp*1000).toLocaleString())}</strong>
+        <br/>
         {'You Exited '}
         <Button type="link" style={{padding: "0"}}
           onClick={() => dispatch(uiRacerSelected({id: e.returnValues.racer}))}>
@@ -456,19 +536,22 @@ class RightDrawerView extends PureComponent {
           onClick={() => dispatch(uiRaceSelected({id: e.returnValues.race}))}>
           {'Race #'+e.returnValues.race}
         </Button>
+        {' (Refund: '+(racingFeeByLevel(e.returnValues.level) + 4)+' finney)'}
       </span></List.Item> : 
     (e.event === "RaceStarted") ?
       <List.Item><span>
-        <strong>{'['+e.blockNumber+']> '}</strong>
+        <strong>{(new Date(e.returnValues.timestamp*1000).toLocaleString())}</strong>
+        <br/>
         <Button type="link" style={{padding: "0"}}
           onClick={() => dispatch(uiRaceSelected({id: e.returnValues.race}))}>
-          {'Race #'+e.returnValues.race}
+          {' Race #'+e.returnValues.race+' (level '+e.returnValues.level+')'}
         </Button>
         {' Starting'}
       </span></List.Item> : 
     (e.event === "RaceFinished" && !e.returnValues.distance) ?
       <List.Item><span>
-        <strong>{'['+e.blockNumber+']> '}</strong>
+        <strong>{(new Date(e.returnValues.timestamp*1000).toLocaleString())}</strong>
+        <br/>
         <Button type="link" style={{padding: "0"}}
           onClick={() => dispatch(uiRaceSelected({id: e.returnValues.race}))}>
           {'Race #'+e.returnValues.race}
@@ -481,38 +564,56 @@ class RightDrawerView extends PureComponent {
       </span></List.Item> : 
     (e.event === "RaceFinished") ?
       <List.Item><span>
-        <strong>{'['+e.blockNumber+']> '}</strong>
+        <strong>{(new Date(e.returnValues.timestamp*1000).toLocaleString())}</strong>
+        <br/>
         <Button type="link" style={{padding: "0"}}
           onClick={() => dispatch(uiRacerSelected({id: e.returnValues.racer}))}>
           {'Racer #'+e.returnValues.racer}
         </Button>
-        {' finished #'+e.returnValues.place+' in '}
+        {' Finished '+e.returnValues.place+(
+          (e.returnValues.place === 1) ? 'st Place in ' : 
+          (e.returnValues.place === 2) ? 'nd Place in ' : 
+          (e.returnValues.place === 3) ? 'rd Place in ' : 'th Place in '
+        )}
         <Button type="link" style={{padding: "0"}}
           onClick={() => dispatch(uiRaceSelected({id: e.returnValues.race}))}>
           {'Race #'+e.returnValues.race}
         </Button>
+        { (e.returnValues.place === 1) ? 
+          ' winning '+firstRewardView(e.returnValues.level)+'!' : 
+          (e.returnValues.place === 2) ? 
+          ' winning '+secondRewardView(e.returnValues.level)+'!' : 
+          (e.returnValues.place === 3) ? 
+          ' winning '+thirdRewardView(e.returnValues.level)+'!' : ''
+        }
+        {' Experience +'+e.returnValues.exp}
       </span></List.Item> : 
     (e.event === "LaneSettled") ?
       <List.Item><span>
-        <strong>{'['+e.blockNumber+']> '}</strong>
+        <strong>{(new Date(e.returnValues.timestamp*1000).toLocaleString())}</strong>
+        <br/>
         {'You Settled Lane '+e.returnValues.lane+' in '}
         <Button type="link" style={{padding: "0"}}
           onClick={() => dispatch(uiRaceSelected({id: e.returnValues.race}))}>
           {'Race #'+e.returnValues.race}
         </Button>
+        {(e.returnValues.lane === 1) ? ' (Reward: 4 finney)' : ' (Reward: 3 finney)'}
       </span></List.Item> : 
     (e.event === "RaceSettled") ?
       <List.Item><span>
-        <strong>{'['+e.blockNumber+']> '}</strong>
+        <strong>{(new Date(e.returnValues.timestamp*1000).toLocaleString())}</strong>
+        <br/>
         {'You Settled '}
         <Button type="link" style={{padding: "0"}}
           onClick={() => dispatch(uiRaceSelected({id: e.returnValues.race}))}>
           {'Race #'+e.returnValues.race}
         </Button>
+        {' (Reward: 5 finney)'}
       </span></List.Item> : 
     (e.event === "RacerTrained") ?
       <List.Item><span>
-        <strong>{'['+e.blockNumber+']> '}</strong>
+        <strong>{(new Date(e.returnValues.timestamp*1000).toLocaleString())}</strong>
+        <br/>
         {'You Trained '}
         <Button type="link" style={{padding: "0"}}
           onClick={() => dispatch(uiRacerSelected({id: e.returnValues.racer}))}>
@@ -525,8 +626,12 @@ class RightDrawerView extends PureComponent {
 }
 
 RightDrawerView.propTypes = {
+  entityC: PropTypes.object,
+  blockRacerC: PropTypes.object,
   loadingAccount: PropTypes.bool,
   mountingAccount: PropTypes.bool,
+  account: PropTypes.string,
+  block: PropTypes.object,
   exp: PropTypes.number,
   txs: PropTypes.array,
   txLog: PropTypes.object,
@@ -543,8 +648,12 @@ RightDrawerView.propTypes = {
 }
 
 export default connect((state) => ({
+  entityC: state.entityC,
+  blockRacerC: state.blockRacerC,
   loadingAccount: state.loadingAccount,
   mountingAccount: state.mountingAccount,
+  account: state.account,
+  block: state.block,
   exp: state.exp,
   txs: state.txs,
   txLog: state.txLog,

@@ -54,7 +54,7 @@ class App extends Component {
             <Row style={{ margin: "4px", padding:"0px 8px" }}>
               {(loadingWeb3) ? (
                 <span><Spin /><span style={{marginLeft: "4px"}}>
-                  Loading Web3 Provider...
+                  Waiting for Web3 Provider...
                 </span></span>
               ) : (!!web3Error) ? (
                 <span>Install and activate MetaMask, or any Web3 Provider, to continue.</span>

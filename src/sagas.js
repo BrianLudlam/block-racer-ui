@@ -6,7 +6,7 @@ import { LOAD_WEB3, LOAD_WEB3_SUCCESS, NETWORK_CHANGE, ACCOUNT_CHANGE, ACCOUNT_C
          createBlockUpdateChannel, createAccountChangeChannel, UI_RACE_SELECTED,//createEventListenerChannel,
          createTransactionChannel, mapRacerSpawnState, loadAccountState,
          saveAccountState, initAccountState, processLaneValues, conditionsView,
-         getPastEvents, accountTopic, BLOCK_UPDATE } from './constants';
+         getPastEvents, accountTopic, BLOCK_UPDATE, BlockRacerGenesis } from './constants';
 import { web3Loaded, web3Error, accountChange, accountChanged,
          blockUpdate, accountMounted, racerUpdated, contractEvent, txUpdate, raceLoaded,
          raceUpdated, recentRacesUpdated } from './actions';
@@ -42,7 +42,7 @@ function* mountNetwork() {
     init.accountView = init.account.substr(0,7)+'...'+ init.account.substr(
       init.account.length-5, init.account.length);
     const balanceWei = yield call(init.web3.eth.getBalance, init.account);
-    init.balance = init.web3.utils.fromWei(balanceWei, 'ether');
+    init.balance = (!balanceWei) ? '0' : init.web3.utils.fromWei(balanceWei, 'ether');
     if (!!init.blockRacerC){
       const experienceOf = yield call(init.blockRacerC.methods.experienceOf, init.account);
       const exp = yield call(experienceOf.call, {from: init.account});
@@ -55,7 +55,7 @@ function* mountNetwork() {
     //init.settleCount = yield call(settleCountMethod.call, {from: init.account});
     //init.settleCount = (!init.settleCount) ? 0 : parseInt(init.settleCount,10);
   }
-  yield fork(initRecentRaces, init.blockRacerC, init.block.number, 35000);
+  yield fork(initRecentRaces, init.blockRacerC, init.block.number);
 
   yield put(web3Loaded(init));
   yield fork(watchForAccountChanges);
@@ -108,31 +108,40 @@ function* watchForBlockUpdates(web3) {
         }
       }
     }
+  } catch (e) { console.log('Block Update Channel Error caught: ',e);
   } finally {
     blockUpdateChannel.close();
   }
 }
 
-function* initRecentRaces(blockRacerC, blockNumber, blockCount) {
-  let recentRaces = yield call(getPastEvents, blockRacerC, 'RaceStarted', {
-    fromBlock: ((blockNumber > blockCount) ? blockNumber - blockCount : 0),
-    toBlock: blockNumber
-  }); 
-  if (!recentRaces) recentRaces = [];
-  recentRaces = recentRaces.map((e) => ({
-    id: e.returnValues.race.toString(),
-    distance: parseInt(e.returnValues.distance,10),
-    conditions: parseInt(e.returnValues.conditions,10),
-    timestamp: parseInt(e.returnValues.timestamp,10)
-  }));
-  recentRaces.sort((a,b) => b.timestamp - a.timestamp);
-  yield put(recentRacesUpdated({recentRaces}));
+function* initRecentRaces(blockRacerC, blockNumber) {
+  let recentRaces = undefined;
+  try {
+    const _recentRaces = yield call(getPastEvents, blockRacerC, 'RaceStarted', {
+      fromBlock: BlockRacerGenesis,
+      toBlock: blockNumber
+    }); 
+    if (!!_recentRaces && !!_recentRaces.length) {
+      recentRaces = _recentRaces.map((e) => ({
+        id: e.returnValues.race.toString(),
+        distance: parseInt(e.returnValues.distance,10),
+        conditions: parseInt(e.returnValues.conditions,10),
+        timestamp: parseInt(e.returnValues.timestamp,10)
+      }));
+      recentRaces.sort((a,b) => b.timestamp - a.timestamp);
+    }
+  } catch (e) { console.log('Internal RPC Error caught: ',e);
+  } finally { 
+    if (!recentRaces) recentRaces = [];
+    yield put(recentRacesUpdated({recentRaces})); 
+  }
 }
 
 function* updateRecentRaces() {
+  const { block, blockRacerC } = yield select();
+  let recentRaces = undefined;
   try {
-    const { block, blockRacerC } = yield select();
-    const _recentRaces = yield call(getPastEvents, blockRacerC, 'RaceStarted', {
+   const _recentRaces = yield call(getPastEvents, blockRacerC, 'RaceStarted', {
       fromBlock: block.number,
       toBlock: block.number
     }); 
@@ -144,9 +153,12 @@ function* updateRecentRaces() {
         timestamp: parseInt(e.returnValues.timestamp,10)
       }));
       recentRaces.sort((a,b) => b.timestamp - a.timestamp);
-      yield put(recentRacesUpdated({recentRaces}));
     }
-  } catch (e) { console.log('Internal RPC Error caught: ',e); }
+  } catch (e) { console.log('Internal RPC Error caught: ',e);
+  } finally { 
+    if (!recentRaces) recentRaces = [];
+    yield put(recentRacesUpdated({recentRaces})); 
+  }
 }
 
 function* updateContractEvents() {
@@ -177,32 +189,33 @@ function* getNewEvents(fromBlock, toBlock, eventLog) {
   }
 
   const topic = web3.eth.abi.encodeParameter('address', account);
-  let pastEvents = yield call(getPastEvents, entityC, 'allEvents', {
-    topics: accountTopic(1, topic),//transfer-from, nameChange,and spawned
-    fromBlock, 
-    toBlock
-  }); 
-  pastEvents.forEach(addEvent);
+  try {
+    let pastEvents = yield call(getPastEvents, entityC, 'allEvents', {
+      topics: accountTopic(1, topic),//transfer-from, nameChange,and spawned
+      fromBlock, 
+      toBlock
+    }); 
+    pastEvents.forEach(addEvent);
 
-  pastEvents = yield call(getPastEvents, entityC, 'allEvents', {
-    topics: accountTopic(2, topic),//transfer-to, spawner
-    fromBlock, 
-    toBlock
-  }); 
-  pastEvents.forEach(addEvent);
+    pastEvents = yield call(getPastEvents, entityC, 'allEvents', {
+      topics: accountTopic(2, topic),//transfer-to, spawner
+      fromBlock, 
+      toBlock
+    }); 
+    pastEvents.forEach(addEvent);
 
-  pastEvents = yield call(getPastEvents, blockRacerC, 'allEvents', {
-    topics: accountTopic(1, topic),
-    fromBlock, 
-    toBlock
-  }); 
-  pastEvents.forEach(addEvent);
-
-  //process new events in order they occured
-  newEvents.sort((a,b) => ((a.blockNumber === b.blockNumber) ?
-    a.transactionIndex - b.transactionIndex : a.blockNumber - b.blockNumber));
-  
-  return newEvents;
+    pastEvents = yield call(getPastEvents, blockRacerC, 'allEvents', {
+      topics: accountTopic(1, topic),
+      fromBlock, 
+      toBlock
+    }); 
+    pastEvents.forEach(addEvent);
+  } catch (e) { console.log('Internal RPC Error caught: ',e);
+  } finally { 
+    newEvents.sort((a,b) => ((a.blockNumber === b.blockNumber) ?
+      a.transactionIndex - b.transactionIndex : a.blockNumber - b.blockNumber));
+    return newEvents;
+  }
 }
 
 function* mountAccount() {
@@ -293,6 +306,7 @@ function* watchForAccountChanges() {
       yield take(accountChangeChannel);
       yield put(accountChange());
     }
+  } catch (e) { console.log('Internal RPC Error caught: ',e);
   } finally {
     accountChangeChannel.close();
   }
@@ -301,38 +315,53 @@ function* watchForAccountChanges() {
 function* changeAccount() {
   const { web3 } = yield select();
   if(!!web3) {
-    const accounts = yield call(web3.eth.getAccounts);
-    if (!!accounts && !!accounts[0]){
-      const account = accounts[0].toString();
-      const accountView = account.substr(0,7)+'...'+ account.substr(account.length-5, account.length);
-      const { balance, exp } = yield* updateAccount(account);
-      yield put(accountChanged({account, accountView, balance, exp}));
+    let accounts = undefined;
+    try {
+      accounts = yield call(web3.eth.getAccounts);
+    } catch (e) { console.log('Internal RPC Error caught: ',e);
+    } finally {
+      if (!!accounts && !!accounts[0]){
+        const account = accounts[0].toString();
+        const accountView = account.substr(0,7)+'...'+ account.substr(account.length-5, account.length);
+        const { balance, exp } = yield* updateAccount(account);
+        yield put(accountChanged({account, accountView, balance, exp}));
+      } else {//account load error, clear account
+        yield put(accountChanged({account: '', accountView: '', balance: '', exp: undefined}));
+      }
     }
   }
 }
 
 function* updateAccount(account) {
   const { web3, blockRacerC } = yield select();
-  const balanceWei = yield call(web3.eth.getBalance, account);
-  const balance = web3.utils.fromWei(balanceWei, 'ether');
-  let experienceOf = yield call(blockRacerC.methods.experienceOf, account);
-  let exp = yield call(experienceOf.call, {from: account});
-  exp = (!exp) ? 0 : parseInt(exp,10);
-  return { balance, exp };
+  let balance = 0;
+  let exp = 0;
+  try {
+    const balanceWei = yield call(web3.eth.getBalance, account);
+    balance = (!balanceWei) ? '0' : web3.utils.fromWei(balanceWei, 'ether');
+    const experienceOf = yield call(blockRacerC.methods.experienceOf, account);
+    exp = yield call(experienceOf.call, {from: account});
+    exp = (!exp) ? 0 : parseInt(exp,10);
+  } catch (e) { console.log('Internal RPC Error caught: ',e); 
+  } finally { return { balance, exp }; }
 }
 
 function* updateCounts() {
   const { account, entityC, blockRacerC } = yield select();
-  const spawnCountMethod = yield call(entityC.methods.spawnCount);
-  let spawnCount = yield call(spawnCountMethod.call, {from: account});
-  spawnCount = (!spawnCount) ? 0 : parseInt(spawnCount,10);
-  const settleCountMethod = yield call(blockRacerC.methods.numSettling);
-  let settleCount = yield call(settleCountMethod.call, {from: account});
-  settleCount = (!settleCount) ? 0 : parseInt(settleCount,10);
-  //const queueCountMethod = yield call(blockRacerC.methods.getRaceQueue, level);
-  //let queueCount = yield call(queueCountMethod.call, {from: account});
-  //queueCount = (!queueCount) ? 0 : parseInt(queueCount,10);
-  return { spawnCount, settleCount };
+  let spawnCount = 0;
+  let settleCount = 0;
+  try {
+    const spawnCountMethod = yield call(entityC.methods.spawnCount);
+    spawnCount = yield call(spawnCountMethod.call, {from: account});
+    spawnCount = (!spawnCount) ? 0 : parseInt(spawnCount,10);
+    const settleCountMethod = yield call(blockRacerC.methods.numSettling);
+    settleCount = yield call(settleCountMethod.call, {from: account});
+    settleCount = (!settleCount) ? 0 : parseInt(settleCount,10);
+    //const queueCountMethod = yield call(blockRacerC.methods.getRaceQueue, level);
+    //let queueCount = yield call(queueCountMethod.call, {from: account});
+    //queueCount = (!queueCount) ? 0 : parseInt(queueCount,10);
+  } catch (e) { console.log('Internal RPC Error caught: ',e); 
+  } finally { return { spawnCount, settleCount }; }
 }
 
 function* updateRacer(id) {
@@ -345,34 +374,42 @@ function* updateRacer(id) {
   }
 
   if (!_racer.genes || _racer.genes[0] === 0) {
-    const getEntity = yield call(entityC.methods.getEntity, id);
-    const entity = yield call(getEntity.call, {from: account});
-
-    const name = entity.name.toString().replace(/[^A-Za-z0-9\s$%&*!@-_().]/ig, "");
-    _racer.id = id;
-    _racer.name = name;
-    _racer.displayName = 'Racer #'+id+((!!name) ? ' "'+name+'"' : '');
-    _racer.born = parseInt(entity.born,10);
-    _racer.parentA = (entity.parentA.toString() === "0") ? null : entity.parentA.toString();
-    _racer.parentB = (entity.parentB.toString() === "0") ? null : entity.parentB.toString();
-    _racer.genes = entity.genes;
+    try {
+      const getEntity = yield call(entityC.methods.getEntity, id);
+      const entity = yield call(getEntity.call, {from: account});
+      const name = entity.name.toString().replace(/[^A-Za-z0-9\s$%&*!@-_().]/ig, "");
+      _racer.id = id;
+      _racer.name = name;
+      _racer.displayName = 'Racer #'+id+((!!name) ? ' "'+name+'"' : '');
+      _racer.born = parseInt(entity.born,10);
+      _racer.parentA = (entity.parentA.toString() === "0") ? null : entity.parentA.toString();
+      _racer.parentB = (entity.parentB.toString() === "0") ? null : entity.parentB.toString();
+      _racer.genes = entity.genes;
+    } catch (e) { console.log('Internal RPC Error caught: ',e); }
   }
 
   if (!!_racer.born && (!_racer.state || _racer.state === "CREATING" || _racer.state === "SPAWNING")) {
     mapRacerSpawnState(_racer, block.number);
   } else {
-    const getRacer = yield call(blockRacerC.methods.getRacer, id);
-    const racerRaw = yield call(getRacer.call, {from: account});
-    _racer.lastRace = (racerRaw.lastRace.toString() === "0") ? "" : racerRaw.lastRace.toString();
-    _racer.accel = parseInt(racerRaw.accel,10);
-    _racer.top = parseInt(racerRaw.top,10);
-    _racer.traction = parseInt(racerRaw.traction,10);
-    _racer.level = racerLevel(_racer);
+    try {
+      const getRacer = yield call(blockRacerC.methods.getRacer, id);
+      const racerRaw = yield call(getRacer.call, {from: account});
+      _racer.lastRace = (racerRaw.lastRace.toString() === "0") ? "" : racerRaw.lastRace.toString();
+      _racer.accel = parseInt(racerRaw.accel,10);
+      _racer.top = parseInt(racerRaw.top,10);
+      _racer.traction = parseInt(racerRaw.traction,10);
+      _racer.level = racerLevel(_racer);
+    } catch (e) { console.log('Internal RPC Error caught: ',e); }
   }
 
   if (!!_racer.lastRace) {
-    const getRace = yield call(blockRacerC.methods.getRace, _racer.lastRace);
-    const _race = yield call(getRace.call, {from: account});
+    let _race = undefined;
+    try {
+      const getRace = yield call(blockRacerC.methods.getRace, _racer.lastRace);
+      _race = yield call(getRace.call, {from: account});
+    } catch (e) { console.log('Internal RPC Error caught: ',e); }
+    if (!_race) return;
+
     _racer.state = (parseInt(_race.lanesReady,10) < 6) ? 'QUEUEING' : 
       (!_race.settled) ? 'RACING' : 'IDLE';
   } else if (_racer.state === "RACING" || _racer.state === "QUEUEING") {
@@ -409,7 +446,6 @@ function* watchTransaction({contract, method, args, params}) {
   }
 }
 
-
 function* mountRace() {
   const { web3, network, account, block, blockRacerC, uiSelectedRace } = yield select();
 
@@ -431,8 +467,16 @@ function* mountRace() {
     return;
   } 
 
-  const getRace = yield call(blockRacerC.methods.getRace, uiSelectedRace);
-  const _race = yield call(getRace.call, {from: account});
+  let _race = undefined;
+  try {
+    const getRace = yield call(blockRacerC.methods.getRace, uiSelectedRace);
+    _race = yield call(getRace.call, {from: account});
+  } catch (e) { console.log('Internal RPC Error caught: ',e); }
+
+  if (!_race) {
+    yield put(raceLoaded({raceTrack}));
+    return;
+  } 
 
   raceTrack.latestBlock = block.number;
   raceTrack.raceDistance = parseInt(_race.distance,10);
@@ -492,9 +536,7 @@ function* mountRace() {
       nextBlock++;
     }
   }
-
   yield put(raceLoaded({raceTrack}));
-
 }
 
 function* updateRace() {
@@ -523,8 +565,13 @@ function* updateRace() {
     }
   };
 
-  const getRace = yield call(blockRacerC.methods.getRace, uiSelectedRace);
-  const _race = yield call(getRace.call, {from: account});
+  let _race = undefined;
+  try {
+    const getRace = yield call(blockRacerC.methods.getRace, uiSelectedRace);
+    _race = yield call(getRace.call, {from: account});
+  } catch (e) { console.log('Internal RPC Error caught: ',e); }
+
+  if (!_race) return;
 
   _raceTrack.lanesReady = parseInt(_race.lanesReady,10);
   _raceTrack.raceReady = (_raceTrack.lanesReady === 6);
@@ -569,9 +616,9 @@ function* updateRace() {
       nextBlock++;
     }
   }
-
   yield put(raceUpdated({raceTrack: _raceTrack}));
 }
+
 
 export default function* rootSaga() {
   yield takeLatest(LOAD_WEB3, mountNetwork);
